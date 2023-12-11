@@ -9,8 +9,6 @@ from boto3.dynamodb.types import Decimal
 dynamodb = boto3.resource('dynamodb', region_name=aws_region, aws_access_key_id=aws_access_key_id, aws_secret_access_key=aws_secret_access_key)
 
 
-
-# Get a reference to your table
 table_hcp = dynamodb.Table(table_name_hcp)
 table_clc = dynamodb.Table(table_name_clc)
 

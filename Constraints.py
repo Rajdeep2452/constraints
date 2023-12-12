@@ -9,6 +9,7 @@ from boto3.dynamodb.types import Decimal
 dynamodb = boto3.resource('dynamodb', region_name=aws_region, aws_access_key_id=aws_access_key_id, aws_secret_access_key=aws_secret_access_key)
 
 
+# Get a reference to your table
 table_hcp = dynamodb.Table(table_name_hcp)
 table_clc = dynamodb.Table(table_name_clc)
 
@@ -26,9 +27,23 @@ default_values_clc = {
 }
 
 class RequestHandler(BaseHTTPRequestHandler):
+    def _send_cors_headers(self):
+        self.send_header('Access-Control-Allow-Origin', 'http://localhost:8080')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+        self.send_header('Access-Control-Allow-Credentials', 'true')
+
+    def do_OPTIONS(self):
+        self.send_response(200)
+        self._send_cors_headers()
+        self.end_headers()
 
     def _send_response(self, status_code, message):
         self.send_response(status_code)
+        self.send_header('Access-Control-Allow-Origin', 'http://localhost:')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+        self.send_header('Access-Control-Allow-Credentials', 'true')
         self.send_header('Content-type', 'application/json')
         self.end_headers()
         self.wfile.write(json.dumps(message).encode())
@@ -176,7 +191,7 @@ class RequestHandler(BaseHTTPRequestHandler):
 
                 # Insert data into DynamoDB table using batch write
                 self._insert_items(table_hcp, [data])
-                self._send_response(201, {'message': 'Data inserted successfully', 'data': data})
+                self._send_response(201, ['Data inserted successfully', data])
 
             except Exception as e:
                 print(f"Error processing POST request for HCP: {e}")
@@ -213,7 +228,7 @@ class RequestHandler(BaseHTTPRequestHandler):
 
                 # Insert data into DynamoDB table using batch write
                 self._insert_items(table_clc, [data])
-                self._send_response(201, {'message': 'Data inserted successfully', 'data': data})
+                self._send_response(201, ['Data inserted successfully', data])
 
             except Exception as e:
                 print(f"Error processing POST request for CLC: {e}")

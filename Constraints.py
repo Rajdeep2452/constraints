@@ -28,7 +28,7 @@ default_values_clc = {
 
 class RequestHandler(BaseHTTPRequestHandler):
     def _send_cors_headers(self):
-        self.send_header('Access-Control-Allow-Origin', 'http://localhost:8080')
+        self.send_header('Access-Control-Allow-Origin', 'http://localhost:4200')
         self.send_header('Access-Control-Allow-Methods', 'GET, POST')
         self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
         self.send_header('Access-Control-Allow-Credentials', 'true')
@@ -40,7 +40,7 @@ class RequestHandler(BaseHTTPRequestHandler):
 
     def _send_response(self, status_code, message):
         self.send_response(status_code)
-        self.send_header('Access-Control-Allow-Origin', 'http://localhost:')
+        self.send_header('Access-Control-Allow-Origin', 'http://localhost:4200')
         self.send_header('Access-Control-Allow-Methods', 'GET, POST')
         self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
         self.send_header('Access-Control-Allow-Credentials', 'true')

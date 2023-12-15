@@ -13,6 +13,7 @@ dynamodb = boto3.resource('dynamodb', region_name=aws_region, aws_access_key_id=
 table_hcp = dynamodb.Table(table_name_hcp)
 table_clc = dynamodb.Table(table_name_clc)
 table_pt = dynamodb.Table(table_name_pt)
+table_suppression = dynamodb.Table(table_name_suppression)
 
 # Default values for each column
 default_values_hcp = {
@@ -81,6 +82,13 @@ class RequestHandler(BaseHTTPRequestHandler):
         self.send_header('Content-type', 'application/json')
         self.end_headers()
         self.wfile.write(json.dumps(message, cls=DecimalEncoder).encode())
+
+    
+    def _set_cors_headers(self):
+        self.send_header('Access-Control-Allow-Origin', 'http://localhost:4200')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+        self.send_header('Access-Control-Allow-Credentials', 'true')
 
     def _insert_items(self, table, items):
         # Use batch write for inserting multiple items
@@ -224,6 +232,32 @@ class RequestHandler(BaseHTTPRequestHandler):
 
         return True, None
 
+    def _count_dynamic_fields(self, post_data):
+        # Count the number of 3pe_m* fields dynamically
+        count = 0
+        while f'3pe_m{count + 1}' in post_data or f'3pe_m{count + 1}_value' in post_data:
+            count += 1
+        return count
+
+    def _validate_post_data_suppression(self, post_data):
+        # Validate common fields
+        common_fields_valid = (
+            1 <= post_data.get('vs_last_visit_completed', 0) <= 90 and
+            1 <= post_data.get('vs_next_visit_planned', 0) <= 90 and
+            1 <= post_data.get('rtes_last_rte_sent', 0) <= 90 and
+            1 <= post_data.get('hoes_last_hoe_sent', 0) <= 90
+        )
+
+        # Validate 3pe_m* fields
+        dynamic_fields_valid = all(
+            isinstance(post_data.get(f'3pe_m{i}_value', 0), int) and
+            1 <= post_data.get(f'3pe_m{i}_value', 0) <= 90 and
+            isinstance(post_data.get(f'3pe_m{i}', ''), str)
+            for i in range(1,  self._count_dynamic_fields(post_data) + 1)
+        )
+
+        return common_fields_valid and dynamic_fields_valid
+
     def do_GET(self):
         if self.path == '/HCP':
             try:
@@ -232,6 +266,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                 data = self._convert_decimal_to_int(largest_id_data_hcp)
                 # Return the data of the row with the largest ID for HCP table
                 self._send_response(200, {'data': data})
+                
             except Exception as e:
                 print(f"Error processing GET request: {e}")
                 self._send_response(500, {'error': 'Internal server error'})
@@ -252,10 +287,16 @@ class RequestHandler(BaseHTTPRequestHandler):
             for rule in valid_rules:
                 item = table_pt.get_item(Key={'Rule': rule}).get('Item', default_values_pt)
                 response_data[rule] = item
-            self.send_response(200)
+            self.send_response(200,{'data':response_data})
+            self._set_cors_headers()
             self.send_header('Content-type', 'application/json')
             self.end_headers()
             self.wfile.write(json.dumps(response_data, cls=DecimalEncoder).encode())
+
+        elif self.path == '/Suppression':
+            response = table_suppression.scan()
+            items = response.get('Items', [])
+            self._send_response(200, items)
 
         else:
             self._send_response(404, {'error': 'Not Found'})
@@ -370,7 +411,39 @@ class RequestHandler(BaseHTTPRequestHandler):
                 self._send_response(200, {'message': 'Data updated successfully', 'data': inserted_data})
             else:
                 self._send_response(400, 'Bad Request: Missing "rules" key in the payload')
-                
+
+        elif self.path == '/Suppression':
+            content_length = int(self.headers['Content-Length'])
+            post_data = json.loads(self.rfile.read(content_length).decode('utf-8'))
+
+            # Validate data
+            if not self._validate_post_data_suppression(post_data):
+                self._send_response(400, {'message': 'Data Validation failed'})
+                return
+
+            # Check if there are zero rows
+            response = table_suppression.scan()
+            existing_data = response.get('Items', [])
+            
+            if existing_data:
+                # Update data
+                existing_item = table_suppression.get_item(Key={'id': 1}).get('Item')
+                if existing_item:
+                    # Merge the existing item with the new data
+                    updated_item = {**{'id': 1}, **existing_item, **post_data}
+
+                    # Update the item in the table
+                    table_suppression.put_item(Item=updated_item)
+                else:
+                    # Handle the case where the item with the given primary key doesn't exist
+                    # You may choose to insert a new item or handle it differently based on your requirements
+                    self._send_response(404, {'message': 'Item not found'})
+            else:
+                # Insert data
+                table_suppression.put_item(Item={**{'id': 1},**post_data})
+
+            self._send_response(201, ['Data updated successfully', post_data])
+
         else:
             self._send_response(404, {'error': 'Not Found'})
         existing_priority_orders = set()

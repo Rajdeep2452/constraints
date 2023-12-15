@@ -210,7 +210,6 @@ class RequestHandler(BaseHTTPRequestHandler):
         if rule in ["new_patients_expected_in_the_next_3_months",
                     "new_patient_starts_in_a_particular_lot",
                     "decline_in_rx_share_in_the_last_one_month",
-                    "high_value_website_visits_in_the_last_15_days",
                     "low_call_plan_attainment"]:
             if type(trigger_value) is not int:
                 return False, f'Invalid Trigger_Value for rule {rule}: Should be an integer.'

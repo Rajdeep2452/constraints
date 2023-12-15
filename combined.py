@@ -450,7 +450,7 @@ class RequestHandler(BaseHTTPRequestHandler):
 
 
 if __name__ == '__main__':
-    server_address = ('localhost', 4200)
+    server_address = ('localhost', 8080)
     httpd = HTTPServer(server_address, RequestHandler)
-    print('Server running on http://localhost:4200')
+    print('Server running on http://localhost:8080')
     httpd.serve_forever()

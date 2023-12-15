@@ -107,10 +107,10 @@ class RequestHandler(BaseHTTPRequestHandler):
                     "decline_in_rx_share_in_the_last_one_month",
                     "high_value_website_visits_in_the_last_15_days",
                     "low_call_plan_attainment"]:
-            if not isinstance(trigger_value, int):
+            if type(trigger_value) is not int:
                 return False, f'Invalid Trigger_Value for rule {rule}: Should be an integer.'
         else:
-            if not isinstance(trigger_value, bool):
+            if type(trigger_value) is not bool:
                 return False, f'Invalid Trigger_Value for rule {rule}: Should be a boolean.'
 
         # Validate trigger urgency

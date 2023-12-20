@@ -2,6 +2,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from config import *
 import json
 import boto3
+import datetime
+import pandas as pd
 from boto3.dynamodb.types import Decimal
 
 
@@ -15,6 +17,18 @@ table_clc = dynamodb.Table(table_name_clc)
 table_pt = dynamodb.Table(table_name_pt)
 table_suppression = dynamodb.Table(table_name_suppression)
 table_summary = dynamodb.Table(table_name_summary)
+table_summary = dynamodb.Table(table_name_summary)
+suggestions_table = dynamodb.Table(suggestions_table_name)
+response_suggestions = suggestions_table.scan()
+suggestions_data = response_suggestions['Items']
+suggestions_df = pd.DataFrame(suggestions_data)
+priority_table = dynamodb.Table(table_name_pt)
+response_priority = priority_table.scan()
+priority_data = response_priority['Items']
+priority_df = pd.DataFrame(priority_data)
+hcp_table = dynamodb.Table(hcp_table_name)
+response_hcp = hcp_table.scan()
+hcp_data = response_hcp['Items']
 
 # Default values for each column
 default_values_hcp = {
@@ -56,6 +70,22 @@ valid_rules = set([
     "no_explicit_consent"
 ])
 
+rule_cols = {
+    "new_patients_expected_in_the_next_3_months": "New_patients_in_next_quarter",
+    "no_explicit_consent": "No_Consent",
+    "clicked_3rd_party_email": "Clicked_3rd_Party_Email",
+    "low_call_plan_attainment": "Best_time",
+    "clicked_home_office_email": "Clicked_Home_Office_Email",
+    "switch_to_competitor_drug": "Switch_to_Competitor",
+    "new_patient_starts_in_a_particular_lot": "New_patients_in_particular_LOT",
+    "high_value_website_visits_in_the_last_15_days": "High Value Website Visits",
+    "decline_in_rx_share_in_the_last_one_month": "Decline_in_Rx_share_in_the_last_one_month",
+    "clicked_rep_triggered_email": "Clicked_Rep_Email"
+}
+
+# Create a dictionary to store counts for each channel
+channel_counts = {'phone': 0, 'email': 0, 'web': 0}
+
 class DecimalEncoder(json.JSONEncoder):
     def default(self, o):
         if isinstance(o, Decimal):
@@ -64,12 +94,6 @@ class DecimalEncoder(json.JSONEncoder):
 
 class RequestHandler(BaseHTTPRequestHandler):
 
-    def _send_cors_headers(self):
-        self.send_header('Access-Control-Allow-Origin', 'http://localhost:4200')
-        self.send_header('Access-Control-Allow-Methods', 'GET, POST')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
-        self.send_header('Access-Control-Allow-Credentials', 'true')
-    
     def do_OPTIONS(self):
         self.send_response(200)
         self._send_cors_headers()
@@ -179,9 +203,6 @@ class RequestHandler(BaseHTTPRequestHandler):
         if not isinstance(priority_order, int):
             return False, 'Priority_Order should be an integer.'
 
-        if priority_order < 1 or priority_order > len(valid_rules):
-            return False, f'Priority_Order should be between 1 and {len(valid_rules)}.'
-
         if priority_order in existing_priority_orders:
             return False, f'Each rule should have a unique Priority_Order. Duplicate - {priority_order}'
 
@@ -259,6 +280,92 @@ class RequestHandler(BaseHTTPRequestHandler):
 
         return common_fields_valid and dynamic_fields_valid
 
+    def compute_summary(self):
+        num_hcp = len(hcp_data)
+        num_rep = max([hcp['rep_id'] for hcp in hcp_data])
+        recomm_cycle = 2
+        # Format Recomm_Date in the desired format
+        recomm_date = datetime.datetime.now().strftime('%dth %b (%a @ %I.%M %p)')
+
+        # Iterate through rows in the 'Suggestions' table
+        for index, suggestion_row in suggestions_df.iterrows():
+            # Filter rules with status TRUE
+            filtered_rules = priority_df[priority_df['Status'] == True].copy()
+            filtered_rules['Segment'] = filtered_rules['Segment'].astype(str)
+
+            # Further filter rules based on segment present in suggestion_row list
+            segment_rules = filtered_rules[filtered_rules['Segment'].str.contains(suggestion_row['Segment'])]
+
+            # Initialize variables to store the highest priority rule and its priority value
+            highest_priority_rule = None
+            highest_priority_value = float('-inf')  # Initialize with negative infinity
+
+            # Iterate through filtered rules
+            for _, rule_row in segment_rules.iterrows():
+                # Get the column name corresponding to the rule in the 'Suggestions' table
+                column_name = rule_cols[rule_row['Rule']]
+
+                # Check if the column value is greater than or equal to the trigger value
+                if suggestion_row[column_name] >= rule_row['Trigger_Value']:
+                    # Check if the rule has higher priority than the current highest priority rule
+                    if rule_row['Priority_Order'] > highest_priority_value:
+                        highest_priority_rule = rule_row
+                        highest_priority_value = rule_row['Priority_Order']
+
+            # If a rule satisfies the condition, update the Summary table
+            if highest_priority_rule is not None:
+                channel = highest_priority_rule['Default_Channel'].lower()
+                # Update counts based on the channel
+                if channel == 'phone':
+                    channel_counts['phone'] += 1
+                elif channel == 'email':
+                    channel_counts['email'] += 1
+                elif channel == 'web':
+                    channel_counts['web'] += 1
+
+        # Check if data for the given id exists
+        existing_data = table_summary.get_item(Key={'id': 1}).get('Item')
+
+        if existing_data:
+            # Update existing data
+            response = table_summary.update_item(
+                Key={'id': 1},
+                UpdateExpression='SET Num_HCP = :nh, Num_Rep = :nr, Recomm_Cycle = :rc, Recomm_Date = :rd, '
+                                'Calls_Recomm = :cr, RTE_Recomm = :rte, Insights = :ins, '
+                                'Avg_Calls = :ac, Avg_RTE = :art, Avg_Insights = :ai',
+                ExpressionAttributeValues={
+                    ':nh': num_hcp,
+                    ':nr': num_rep,
+                    ':rc': recomm_cycle,
+                    ':rd': recomm_date,
+                    ':cr': channel_counts.get('phone', 0),
+                    ':rte': channel_counts.get('email', 0),
+                    ':ins': channel_counts.get('web', 0),
+                    ':ac': str(channel_counts.get('phone', 0) / num_rep),
+                    ':art': str(channel_counts.get('email', 0) / num_rep),
+                    ':ai': str(channel_counts.get('web', 0) / num_rep)
+                },
+                ReturnValues='ALL_NEW'
+            )
+        else:
+            # Insert new data
+            response = table_summary.put_item(
+                Item={
+                    'id': 1,
+                    'Num_HCP': num_hcp,
+                    'Num_Rep': num_rep,
+                    'Recomm_Cycle': recomm_cycle,
+                    'Recomm_Date': recomm_date,
+                    'Calls_Recomm': channel_counts.get('phone', 0),
+                    'RTE_Recomm': channel_counts.get('email', 0),
+                    'Insights': channel_counts.get('web', 0),
+                    'Avg_Calls': str(channel_counts.get('phone', 0) / num_rep),
+                    'Avg_RTE': str(channel_counts.get('email', 0) / num_rep),
+                    'Avg_Insights': str(channel_counts.get('web', 0) / num_rep)
+                }
+            )
+        print("Data computation complete")
+
     def do_GET(self):
         if self.path == '/HCP':
             try:
@@ -300,6 +407,7 @@ class RequestHandler(BaseHTTPRequestHandler):
             self._send_response(200, items)
 
         elif self.path == '/Summary':
+            self.compute_summary()
             try:
                 # Retrieve data from the DynamoDB table
                 response = table_summary.get_item(Key={'id': 1})

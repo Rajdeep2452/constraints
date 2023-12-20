@@ -4,6 +4,9 @@ import json
 import boto3
 import datetime
 import pandas as pd
+import urllib.parse
+import csv
+import io
 from boto3.dynamodb.types import Decimal
 
 
@@ -29,6 +32,12 @@ priority_df = pd.DataFrame(priority_data)
 hcp_table = dynamodb.Table(hcp_table_name)
 response_hcp = hcp_table.scan()
 hcp_data = response_hcp['Items']
+response_summary = table_summary.scan()
+summary_data = response_summary['Items']
+summary_detail_table = dynamodb.Table(table_name_summary_detail)
+response_summary_detail = summary_detail_table.scan()
+summary_detail_data = response_summary_detail['Items']
+summary_detail_df = pd.DataFrame(summary_detail_data)
 
 # Default values for each column
 default_values_hcp = {
@@ -280,6 +289,30 @@ class RequestHandler(BaseHTTPRequestHandler):
 
         return common_fields_valid and dynamic_fields_valid
 
+    def filter_summary_detail_by_action(self, action_param):
+        if action_param == "empty":
+            return summary_detail_data
+        else:
+            # Convert 'calls' to 'Calls', 'emails' to 'Emails', etc.
+            action_value = action_param[0].capitalize()
+            # Filter rows based on the 'Action' column
+            return [row for row in summary_detail_data if row.get('Action') == action_value]
+
+    def convert_to_csv(self, data):
+        # Convert data to CSV string
+        csv_output = io.StringIO()
+        csv_writer = csv.writer(csv_output)
+
+        # Write header excluding the 'Action' column
+        headers = [key for key in data[0].keys() if key != 'Action']
+        csv_writer.writerow(headers)
+
+        # Write data excluding the 'Action' column
+        for row in data:
+            csv_writer.writerow([value for key, value in row.items() if key != 'Action'])
+
+        return csv_output.getvalue()
+
     def compute_summary(self):
         num_hcp = len(hcp_data)
         num_rep = max([hcp['rep_id'] for hcp in hcp_data])
@@ -437,6 +470,80 @@ class RequestHandler(BaseHTTPRequestHandler):
                 self._set_cors_headers()
                 self.end_headers()
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+
+        elif self.path.startswith('/SummaryDetail'):
+            try:
+                # Extract parameters from the URL
+                parsed_url = urllib.parse.urlparse(self.path)
+                query_params = urllib.parse.parse_qs(parsed_url.query)
+
+                # Get the value of the 'action' parameter
+                action_param = query_params.get('action', "empty")
+
+                # Filter rows based on the 'action' parameter
+                filtered_summary_detail = self.filter_summary_detail_by_action(action_param)
+                # Calculate values for Num_HCP, Num_Rep, Recomm_Cycle, and Recomm_Date
+                num_hcp = len(hcp_data)
+                num_rep = max([hcp['rep_id'] for hcp in hcp_data])
+                recomm_cycle = 2
+                recomm_date = datetime.datetime.now().strftime('%dth %b (%a @ %I.%M %p)')
+
+                # Create the response structure
+                response_data = {
+                    "Num_HCP": num_hcp,
+                    "Num_Rep": num_rep,
+                    "NBA_Recomm_Cycle": recomm_cycle,
+                    "Recomm_date": recomm_date,
+                    "details": filtered_summary_detail
+                }
+
+                # Convert response data to JSON
+                response_json = json.dumps([response_data], cls=DecimalEncoder)
+
+                # Send a response back to the client
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self._set_cors_headers()
+                self.end_headers()
+                self.wfile.write(response_json.encode())
+                
+
+            except Exception as e:
+                # Print the error details
+                print(f"Error processing GET request: {str(e)}")
+
+                # Send an error response back to the client
+                self.send_response(500)
+                self.send_header('Content-type', 'application/json')
+                self._set_cors_headers()
+                self.end_headers()
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+
+        elif self.path.startswith('/DownloadCSV'):
+            try:
+                # Get the value of the 'action' parameter for CSV download
+                parsed_url = urllib.parse.urlparse(self.path)
+                query_params = urllib.parse.parse_qs(parsed_url.query)
+
+                # Get the value of the 'action' parameter
+                action_param = query_params.get('action', "empty")
+
+                # Filter rows based on the 'action' parameter
+                filtered_summary_detail = self.filter_summary_detail_by_action(action_param)
+
+                # Convert filtered data to a CSV string
+                csv_data = self.convert_to_csv(filtered_summary_detail)
+
+                # Send the CSV as a response
+                self.send_response(200)
+                self.send_header('Content-type', 'text/csv')
+                self._set_cors_headers()
+                self.end_headers()
+                self.wfile.write(csv_data.encode())
+
+            except Exception as e:
+                # Handle exceptions for CSV download
+                print(f"Error processing Download: {str(e)}")
 
         else:
             self._send_response(404, {'error': 'Not Found'})

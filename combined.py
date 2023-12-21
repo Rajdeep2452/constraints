@@ -217,7 +217,7 @@ class RequestHandler(BaseHTTPRequestHandler):
         if not isinstance(priority_order, int):
             return False, 'Priority_Order should be an integer.'
 
-        if priority_order in existing_priority_orders:
+        if priority_order != 0 and priority_order in existing_priority_orders:
             return False, f'Each rule should have a unique Priority_Order. Duplicate - {priority_order}'
 
         

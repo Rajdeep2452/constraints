@@ -118,6 +118,11 @@ class RequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps(message, cls=DecimalEncoder).encode())
 
+    def _send_cors_headers(self):
+        self.send_header('Access-Control-Allow-Origin', 'http://localhost:4200')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+        self.send_header('Access-Control-Allow-Credentials', 'true')
     
     def _set_cors_headers(self):
         self.send_header('Access-Control-Allow-Origin', 'http://localhost:4200')

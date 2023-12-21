@@ -344,6 +344,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                 column_name = rule_cols[rule_row['Rule']]
 
                 # Check if the column value is greater than or equal to the trigger value
+   
                 if suggestion_row[column_name] >= rule_row['Trigger_Value']:
                     # Check if the rule has higher priority than the current highest priority rule
                     if rule_row['Priority_Order'] > highest_priority_value:

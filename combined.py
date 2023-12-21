@@ -319,7 +319,7 @@ class RequestHandler(BaseHTTPRequestHandler):
         return csv_output.getvalue()
 
     def compute_summary(self):
-        num_hcp = len(hcp_data)
+        num_hcp = len(suggestions_data)
         num_rep = max([hcp['rep_id'] for hcp in hcp_data])
         recomm_cycle = 2
         # Format Recomm_Date in the desired format
@@ -488,7 +488,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                 # Filter rows based on the 'action' parameter
                 filtered_summary_detail = self.filter_summary_detail_by_action(action_param)
                 # Calculate values for Num_HCP, Num_Rep, Recomm_Cycle, and Recomm_Date
-                num_hcp = len(hcp_data)
+                num_hcp = len(suggestions_data)
                 num_rep = max([hcp['rep_id'] for hcp in hcp_data])
                 recomm_cycle = 2
                 recomm_date = datetime.datetime.now().strftime('%dth %b (%a @ %I.%M %p)')

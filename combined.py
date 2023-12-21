@@ -54,12 +54,12 @@ default_values_clc = {
 
 default_values_pt = {
     'Status': False,
-    'Priority_Order': 1,
+    'Priority_Order': 0,
     'Trigger_Value': None,
     'Trigger_Urgency': "Normal",
     'Only_For_Targets': False,
     'Default_Channel': "",
-    'Segment': ""
+    'Segment': "Traditionalist"
 }
 
 # Global variable to track existing priority orders

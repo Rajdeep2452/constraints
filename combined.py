@@ -39,6 +39,10 @@ response_summary_detail = summary_detail_table.scan()
 summary_detail_data = response_summary_detail['Items']
 summary_detail_df = pd.DataFrame(summary_detail_data)
 
+calls_table = dynamodb.Table('Calls_Table')
+email_table = dynamodb.Table('Email_Table')
+web_table = dynamodb.Table('Web_Table')
+
 # Default values for each column
 default_values_hcp = {
     'Calls_Traditionalist': 1, 'Calls_Digital_savvy': 1, 'Calls_Hybrid': 1, 'Calls_Status': True,
@@ -59,7 +63,8 @@ default_values_pt = {
     'Trigger_Urgency': "Normal",
     'Only_For_Targets': False,
     'Default_Channel': "",
-    'Segment': "Traditionalist"
+    'Segment': "Traditionalist",
+    'Recomm_date': datetime.datetime.now().strftime('%dth %b (%a @ %I.%M %p)')
 }
 
 # Global variable to track existing priority orders
@@ -294,14 +299,14 @@ class RequestHandler(BaseHTTPRequestHandler):
 
         return common_fields_valid and dynamic_fields_valid
 
-    def filter_summary_detail_by_action(self, action_param):
-        if action_param == "empty":
-            return summary_detail_data
-        else:
-            # Convert 'calls' to 'Calls', 'emails' to 'Emails', etc.
-            action_value = action_param[0].capitalize()
-            # Filter rows based on the 'Action' column
-            return [row for row in summary_detail_data if row.get('Action') == action_value]
+    # def filter_summary_detail_by_action(self, action_param):
+    #     if action_param == "empty":
+    #         return summary_detail_data
+    #     else:
+    #         # Convert 'calls' to 'Calls', 'emails' to 'Emails', etc.
+    #         action_value = action_param[0].capitalize()
+    #         # Filter rows based on the 'Action' column
+    #         return [row for row in summary_detail_data if row.get('Action') == action_value]
 
     def convert_to_csv(self, data):
         # Convert data to CSV string
@@ -318,49 +323,161 @@ class RequestHandler(BaseHTTPRequestHandler):
 
         return csv_output.getvalue()
 
+    def delete_all_rows_from_table(self, table):
+        try:
+            # Scan the table to get all items
+            response = table.scan()
+            items = response['Items']
+
+            # Delete each item
+            for item in items:
+                npi_id = item['npi_id']  # Assuming 'npi_id' is your primary key
+                table.delete_item(Key={'npi_id': npi_id})
+            
+            print("All rows deleted successfully.")
+        
+        except Exception as e:
+            print(f"Error deleting rows: {e}")
+        
+    def put_data_in_table(self, filtered_npi, rule_row):
+        summary_of_recommendation = ""
+        primary_reason = ""
+        secondary_reason = ""
+        table = None
+
+        if rule_row['Default_Channel'] == 'Phone':
+            table = calls_table
+            summary_of_recommendation = "Consider reaching out to HCP to promote Brand for new patients expected"
+        elif rule_row['Default_Channel'] == 'Email':
+            table = email_table
+            summary_of_recommendation = "Indicates continued interest and curiosity about the product. Possible opportunity to immediately send an RTE based on pages visited"
+        elif rule_row['Default_Channel'] == 'Web':
+            table = web_table
+            summary_of_recommendation = "Indicates engagement with Brand promotional material. Consider following up with rep-triggered email"
+
+
+        for _, row in filtered_npi.iterrows():
+
+            row_name = row['Account_Name']
+            name_parts = row_name.split(', ')
+            full_name = ' '.join(reversed(name_parts))
+            full_name = f"Dr. {full_name}"
+
+            if rule_row['Rule'] == "new_patients_expected_in_the_next_3_months":
+                primary_reason = f"{full_name} is expected to have {rule_row['Trigger_Value']} new patients in the next 3 months"
+                secondary_reason = ""
+            elif rule_row['Rule'] == "decline_in_rx_share_in_the_last_one_month":
+                primary_reason = f"Recent sales of the {full_name} is affiliated with, has decreased significantly by {rule_row['Trigger_Value']}% in the recent 1 month compared to previous 3 months*"
+                secondary_reason = ""
+            elif rule_row['Rule'] == "switch_to_competitor_drug":
+                primary_reason = f"{full_name}'s only eligible patient has moved away to an alternate therapy"
+                secondary_reason = ""
+            elif rule_row['Rule'] == "new_patient_starts_in_a_particular_lot":
+                primary_reason = f"{full_name} is expected to have {rule_row['Trigger_Value']} new patients in 2L LOT in the next 3 months"
+                secondary_reason = ""
+            elif rule_row['Rule'] == "no_explicit_consent":
+                primary_reason = f"Please consider capturing HCP's consent in the next call \n1. {full_name} has not provided email consent or consent has expired \n2. HCP has a call planned in next <3> days \n3. {rule_row['Trigger_Value']}% HCPs in your territory have already provided consent"
+                secondary_reason = ""
+            elif rule_row['Rule'] == "clicked_3rd_party_email":
+                primary_reason =  f"Please consider having a discussion to reinforce the messages in the next call \n1. {full_name} has opened an Approved Email on <Subject> on <date> \n2. HCP has a call planned in next 7 days"
+                secondary_reason = ""
+            elif rule_row['Rule'] == "low_call_plan_attainment":
+                primary_reason = ""
+                secondary_reason = ""
+            elif rule_row['Rule'] == "clicked_home_office_email":
+                primary_reason = f"Please consider having a discussion to reinforce the messages in the next call \n1. {full_name} has opened an Approved Email on <Subject> on <date> \n2. HCP has a call planned in next 7 days"
+                secondary_reason = ""
+            elif rule_row['Rule'] == "high_value_website_visits_in_the_last_15_days":
+                primary_reason = f"{full_name} visited brand website thrice in the past 15 days, spending most time on the Efficacy page"
+                secondary_reason = ""
+            elif rule_row['Rule'] == "clicked_rep_triggered_email":
+                primary_reason = f"Please consider having a discussion to reinforce the messages in the next call \n1. {full_name} has opened an Approved Email on <Subject> on <date> \n2. HCP has a call planned in next 7 days"
+                secondary_reason = ""
+
+            item = {
+                'npi_id': str(row['npi_id']),
+                'Region': row['region'],
+                'Territory': row['territory'],
+                'REP': row['rep_name'],
+                'HCP_Name': full_name,
+                'Priority_Rank': rule_row['Priority_Order'],
+                'Summary_of_recommendation': summary_of_recommendation,
+                'Primary_Reason': primary_reason, 
+                'Secondary_Reason': secondary_reason
+            }
+            table.put_item(Item=item)
+
+    def show_details(self):
+        self.delete_all_rows_from_table(calls_table)
+        self.delete_all_rows_from_table(email_table)
+        self.delete_all_rows_from_table(web_table)
+        for index, rule_row in priority_df.iterrows():
+            # suggestions_df_2 = suggestions_df[suggestions_df['Segment'].isin(rule_row['Segment'])].copy()
+            if rule_row['Segment'] is None:
+                rule_row['Segment'] = []
+            elif isinstance(rule_row['Segment'], str):
+                rule_row['Segment'] = [rule_row['Segment']]
+
+            # Further filter rules based on segment present in suggestion_row list
+            # print(suggestions_df['Segment'])
+            suggestions_df_2 = suggestions_df[suggestions_df['Segment'].isin(rule_row['Segment'])].copy()
+            if rule_row['Rule'] == "new_patients_expected_in_the_next_3_months" and rule_row['Status'] == True:
+                filtered_npi = suggestions_df_2[rule_row['Trigger_Value'] > suggestions_df_2['New_patients_in_next_quarter']].copy()
+                self.put_data_in_table(filtered_npi, rule_row)
+                continue
+            elif rule_row['Rule'] == "decline_in_rx_share_in_the_last_one_month" and rule_row['Status'] == True:
+                filtered_npi = suggestions_df_2[rule_row['Trigger_Value'] > suggestions_df_2['Decline_in_Rx_share_in_the_last_one_month']].copy()
+                self.put_data_in_table(filtered_npi, rule_row)
+                continue
+            elif rule_row['Rule'] == "switch_to_competitor_drug" and rule_row['Status'] == True:
+                filtered_npi = suggestions_df_2[rule_row['Trigger_Value'] == suggestions_df_2['Switch_to_Competitor']].copy()
+                self.put_data_in_table(filtered_npi, rule_row)
+                continue
+            elif rule_row['Rule'] == "new_patient_starts_in_a_particular_lot" and rule_row['Status'] == True:
+                filtered_npi = suggestions_df_2[rule_row['Trigger_Value'] > suggestions_df_2['New_patients_in_particular_LOT']].copy()
+                self.put_data_in_table(filtered_npi, rule_row)
+                continue
+            elif rule_row['Rule'] == "no_explicit_consent" and rule_row['Status'] == True:
+                filtered_npi = suggestions_df_2[rule_row['Trigger_Value'] == suggestions_df_2['No_Consent']].copy()
+                self.put_data_in_table(filtered_npi, rule_row)
+                continue
+            elif rule_row['Rule'] == "clicked_3rd_party_email" and rule_row['Status'] == True:
+                filtered_npi = suggestions_df_2[rule_row['Trigger_Value'] == suggestions_df_2['Clicked_3rd_Party_Email']].copy()
+                self.put_data_in_table(filtered_npi, rule_row)
+                continue
+            elif rule_row['Rule'] == "low_call_plan_attainment" and rule_row['Status'] == True:
+                filtered_npi = suggestions_df_2[rule_row['Trigger_Value'] == suggestions_df_2['New_patients_in_particular_LOT']].copy()
+                self.put_data_in_table(filtered_npi, rule_row)
+                continue
+            elif rule_row['Rule'] == "clicked_home_office_email" and rule_row['Status'] == True:
+                filtered_npi = suggestions_df_2[rule_row['Trigger_Value'] > suggestions_df_2['Clicked_Home_Office_Email']].copy()
+                self.put_data_in_table(filtered_npi, rule_row)
+                continue
+            elif rule_row['Rule'] == "high_value_website_visits_in_the_last_15_days" and rule_row['Status'] == True:
+                filtered_npi = suggestions_df_2[rule_row['Trigger_Value'] == suggestions_df_2['High Value Website Visits']].copy()
+                self.put_data_in_table(filtered_npi, rule_row)
+                continue
+            elif rule_row['Rule'] == "clicked_rep_triggered_email" and rule_row['Status'] == True:
+                filtered_npi = suggestions_df_2[rule_row['Trigger_Value'] > suggestions_df_2['Clicked_Rep_Email']].copy()
+                self.put_data_in_table(filtered_npi, rule_row)
+                continue
+
     def compute_summary(self):
         num_hcp = len(suggestions_data)
         num_rep = max([hcp['rep_id'] for hcp in hcp_data])
         recomm_cycle = 2
         # Format Recomm_Date in the desired format
-        recomm_date = datetime.datetime.now().strftime('%dth %b (%a @ %I.%M %p)')
+        recomm_date = priority_df['Recomm_date'].max()
 
-        # Iterate through rows in the 'Suggestions' table
-        for index, suggestion_row in suggestions_df.iterrows():
-            # Filter rules with status TRUE
-            filtered_rules = priority_df[priority_df['Status'] == True].copy()
-            filtered_rules['Segment'] = filtered_rules['Segment'].astype(str)
+        # Get the number of rows in calls_table
+        num_calls = calls_table.scan(Select='COUNT')['Count']
 
-            # Further filter rules based on segment present in suggestion_row list
-            segment_rules = filtered_rules[filtered_rules['Segment'].str.contains(suggestion_row['Segment'])]
+        # Get the number of rows in email_table
+        num_email = email_table.scan(Select='COUNT')['Count']
 
-            # Initialize variables to store the highest priority rule and its priority value
-            highest_priority_rule = None
-            highest_priority_value = float('-inf')  # Initialize with negative infinity
+        # Get the number of columns in web_table
+        num_web = web_table.scan(Select='COUNT')['Count']
 
-            # Iterate through filtered rules
-            for _, rule_row in segment_rules.iterrows():
-                # Get the column name corresponding to the rule in the 'Suggestions' table
-                column_name = rule_cols[rule_row['Rule']]
-
-                # Check if the column value is greater than or equal to the trigger value
-   
-                if suggestion_row[column_name] >= rule_row['Trigger_Value']:
-                    # Check if the rule has higher priority than the current highest priority rule
-                    if rule_row['Priority_Order'] > highest_priority_value:
-                        highest_priority_rule = rule_row
-                        highest_priority_value = rule_row['Priority_Order']
-
-            # If a rule satisfies the condition, update the Summary table
-            if highest_priority_rule is not None:
-                channel = highest_priority_rule['Default_Channel'].lower()
-                # Update counts based on the channel
-                if channel == 'phone':
-                    channel_counts['phone'] += 1
-                elif channel == 'email':
-                    channel_counts['email'] += 1
-                elif channel == 'web':
-                    channel_counts['web'] += 1
 
         # Check if data for the given id exists
         existing_data = table_summary.get_item(Key={'id': 1}).get('Item')
@@ -377,12 +494,12 @@ class RequestHandler(BaseHTTPRequestHandler):
                     ':nr': num_rep,
                     ':rc': recomm_cycle,
                     ':rd': recomm_date,
-                    ':cr': channel_counts.get('phone', 0),
-                    ':rte': channel_counts.get('email', 0),
-                    ':ins': channel_counts.get('web', 0),
-                    ':ac': str(channel_counts.get('phone', 0) / num_rep),
-                    ':art': str(channel_counts.get('email', 0) / num_rep),
-                    ':ai': str(channel_counts.get('web', 0) / num_rep)
+                    ':cr': num_calls,
+                    ':rte': num_email,
+                    ':ins': num_web,
+                    ':ac': str(num_calls / num_rep),
+                    ':art': str(num_email / num_rep),
+                    ':ai': str(num_web / num_rep)
                 },
                 ReturnValues='ALL_NEW'
             )
@@ -395,12 +512,12 @@ class RequestHandler(BaseHTTPRequestHandler):
                     'Num_Rep': num_rep,
                     'Recomm_Cycle': recomm_cycle,
                     'Recomm_Date': recomm_date,
-                    'Calls_Recomm': channel_counts.get('phone', 0),
-                    'RTE_Recomm': channel_counts.get('email', 0),
-                    'Insights': channel_counts.get('web', 0),
-                    'Avg_Calls': str(channel_counts.get('phone', 0) / num_rep),
-                    'Avg_RTE': str(channel_counts.get('email', 0) / num_rep),
-                    'Avg_Insights': str(channel_counts.get('web', 0) / num_rep)
+                    'Calls_Recomm': num_calls,
+                    'RTE_Recomm': num_email,
+                    'Insights': num_web,
+                    'Avg_Calls': str(num_calls / num_rep),
+                    'Avg_RTE': str(num_email / num_rep),
+                    'Avg_Insights': str(num_web / num_rep)
                 }
             )
         print("Data computation complete")
@@ -446,6 +563,7 @@ class RequestHandler(BaseHTTPRequestHandler):
             self._send_response(200, items)
 
         elif self.path == '/Summary':
+            self.show_details()
             self.compute_summary()
             try:
                 # Retrieve data from the DynamoDB table
@@ -486,9 +604,21 @@ class RequestHandler(BaseHTTPRequestHandler):
                 # Get the value of the 'action' parameter
                 action_param = query_params.get('action', "empty")
 
+
                 # Filter rows based on the 'action' parameter
-                filtered_summary_detail = self.filter_summary_detail_by_action(action_param)
-                # Calculate values for Num_HCP, Num_Rep, Recomm_Cycle, and Recomm_Date
+                if 'calls' in action_param:
+                    table = calls_table
+                elif 'emails' in action_param:
+                    table = email_table
+                elif 'insights' in action_param:
+                    table = web_table
+                else:
+                    raise ValueError("Invalid action parameter")
+
+                dynamo_response = table.scan()
+                dynamo_data = dynamo_response.get('Items', [])
+
+                # Your logic to calculate values for Num_HCP, Num_Rep, Recomm_Cycle, and Recomm_Date
                 num_hcp = len(suggestions_data)
                 num_rep = max([hcp['rep_id'] for hcp in hcp_data])
                 recomm_cycle = 2
@@ -500,7 +630,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                     "Num_Rep": num_rep,
                     "NBA_Recomm_Cycle": recomm_cycle,
                     "Recomm_date": recomm_date,
-                    "details": filtered_summary_detail
+                    "details": dynamo_data
                 }
 
                 # Convert response data to JSON
@@ -512,7 +642,6 @@ class RequestHandler(BaseHTTPRequestHandler):
                 self._set_cors_headers()
                 self.end_headers()
                 self.wfile.write(response_json.encode())
-                
 
             except Exception as e:
                 # Print the error details
@@ -534,18 +663,38 @@ class RequestHandler(BaseHTTPRequestHandler):
                 # Get the value of the 'action' parameter
                 action_param = query_params.get('action', "empty")
 
-                # Filter rows based on the 'action' parameter
-                filtered_summary_detail = self.filter_summary_detail_by_action(action_param)
+                if 'calls' in action_param:
+                    table = calls_table
+                elif 'emails' in action_param:
+                    table = email_table
+                elif 'insights' in action_param:
+                    table = web_table
+                else:
+                    raise ValueError("Invalid action parameter")
+                    
+                # Scan the DynamoDB table to get all items
+                response = table.scan()
 
-                # Convert filtered data to a CSV string
-                csv_data = self.convert_to_csv(filtered_summary_detail)
+            # Check if 'Items' key exists and the list is not empty
+                if 'Items' in response and response['Items']:
+                    items = response['Items']
 
-                # Send the CSV as a response
-                self.send_response(200)
-                self.send_header('Content-type', 'text/csv')
-                self._set_cors_headers()
-                self.end_headers()
-                self.wfile.write(csv_data.encode())
+                    # Convert data to a CSV string
+                    csv_data = self.convert_to_csv(items)
+
+                    # Send the CSV as a response
+                    self.send_response(200)
+                    self.send_header('Content-type', 'text/csv')
+                    self._set_cors_headers()
+                    self.end_headers()
+                    self.wfile.write(csv_data.encode())
+                else:
+                    # Send a response indicating no data
+                    self.send_response(404)
+                    self.send_header('Content-type', 'application/json')
+                    self._set_cors_headers()
+                    self.end_headers()
+                    self.wfile.write(json.dumps({'error': 'No data available'}).encode('utf-8'))
 
             except Exception as e:
                 # Handle exceptions for CSV download

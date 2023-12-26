@@ -323,7 +323,7 @@ class RequestHandler(BaseHTTPRequestHandler):
 
         return csv_output.getvalue()
 
-    def delete_all_rows_from_table(self, table):
+    def delete_all_rows_from_table(self, key, table):
         try:
             # Scan the table to get all items
             response = table.scan()
@@ -332,7 +332,7 @@ class RequestHandler(BaseHTTPRequestHandler):
             # Delete each item
             for item in items:
                 npi_id = item['npi_id']  # Assuming 'npi_id' is your primary key
-                table.delete_item(Key={'npi_id': npi_id})
+                table.delete_item(Key={key: npi_id})
             
             print("All rows deleted successfully.")
         
@@ -408,9 +408,9 @@ class RequestHandler(BaseHTTPRequestHandler):
             table.put_item(Item=item)
 
     def show_details(self):
-        self.delete_all_rows_from_table(calls_table)
-        self.delete_all_rows_from_table(email_table)
-        self.delete_all_rows_from_table(web_table)
+        self.delete_all_rows_from_table("npi_id", calls_table)
+        self.delete_all_rows_from_table("npi_id", email_table)
+        self.delete_all_rows_from_table("npi_id", web_table)
         for index, rule_row in priority_df.iterrows():
             # suggestions_df_2 = suggestions_df[suggestions_df['Segment'].isin(rule_row['Segment'])].copy()
             if rule_row['Segment'] is None:
@@ -826,21 +826,9 @@ class RequestHandler(BaseHTTPRequestHandler):
             existing_data = response.get('Items', [])
             
             if existing_data:
-                # Update data
-                existing_item = table_suppression.get_item(Key={'id': 1}).get('Item')
-                if existing_item:
-                    # Merge the existing item with the new data
-                    updated_item = {**{'id': 1}, **existing_item, **post_data}
+                self.delete_all_rows_from_table("id", response)
 
-                    # Update the item in the table
-                    table_suppression.put_item(Item=updated_item)
-                else:
-                    # Handle the case where the item with the given primary key doesn't exist
-                    # You may choose to insert a new item or handle it differently based on your requirements
-                    self._send_response(404, {'message': 'Item not found'})
-            else:
-                # Insert data
-                table_suppression.put_item(Item={**{'id': 1},**post_data})
+            table_suppression.put_item(Item={**{'id': 1},**post_data})
 
             self._send_response(201, ['Data updated successfully', post_data])
 

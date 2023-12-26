@@ -218,11 +218,14 @@ class RequestHandler(BaseHTTPRequestHandler):
 
         return True
 
-    def validate_priority_order(self, priority_order, existing_priority_orders):
+    def validate_priority_order(self, status, priority_order, existing_priority_orders):
         if not isinstance(priority_order, int):
             return False, 'Priority_Order should be an integer.'
 
-        if priority_order != 0 and priority_order in existing_priority_orders:
+        if status and priority_order == 0:
+            return False, f'Rules with status true cannot have priority order 0'
+
+        if status and priority_order in existing_priority_orders:
             return False, f'Each rule should have a unique Priority_Order. Duplicate - {priority_order}'
 
         
@@ -237,7 +240,7 @@ class RequestHandler(BaseHTTPRequestHandler):
         only_for_targets = data.get('Only_For_Targets', False)  # Default value is False if not provided
 
         # Validate priority order
-        is_valid_priority_order, error_message = self.validate_priority_order(priority_order, existing_priority_orders)
+        is_valid_priority_order, error_message = self.validate_priority_order(status, priority_order, existing_priority_orders)
         if not is_valid_priority_order:
             return False, error_message
 
@@ -362,6 +365,8 @@ class RequestHandler(BaseHTTPRequestHandler):
             name_parts = row_name.split(', ')
             full_name = ' '.join(reversed(name_parts))
             full_name = f"Dr. {full_name}"
+            subject = row['Preferred_Content']
+            date = datetime.datetime.now() - datetime.timedelta(int(row['rte_last_actvty']))
 
             if rule_row['Rule'] == "new_patients_expected_in_the_next_3_months":
                 primary_reason = f"{full_name} is expected to have {rule_row['Trigger_Value']} new patients in the next 3 months"
@@ -378,21 +383,24 @@ class RequestHandler(BaseHTTPRequestHandler):
             elif rule_row['Rule'] == "no_explicit_consent":
                 primary_reason = f"Please consider capturing HCP's consent in the next call \n1. {full_name} has not provided email consent or consent has expired \n2. HCP has a call planned in next <3> days \n3. {rule_row['Trigger_Value']}% HCPs in your territory have already provided consent"
                 secondary_reason = ""
+                summary_of_recommendation = "Consent is Expiring: Please consider sending any Approved Email which will automatically reset the consent for the HCP"
             elif rule_row['Rule'] == "clicked_3rd_party_email":
-                primary_reason =  f"Please consider having a discussion to reinforce the messages in the next call \n1. {full_name} has opened an Approved Email on <Subject> on <date> \n2. HCP has a call planned in next 7 days"
+                primary_reason =  f"Please consider having a discussion to reinforce the messages in the next call \n1. {full_name} has opened an Approved Email on {subject} on {date} \n2. HCP has a call planned in next 7 days"
                 secondary_reason = ""
             elif rule_row['Rule'] == "low_call_plan_attainment":
                 primary_reason = ""
                 secondary_reason = ""
             elif rule_row['Rule'] == "clicked_home_office_email":
-                primary_reason = f"Please consider having a discussion to reinforce the messages in the next call \n1. {full_name} has opened an Approved Email on <Subject> on <date> \n2. HCP has a call planned in next 7 days"
+                primary_reason = f"Please consider having a discussion to reinforce the messages in the next call \n1. {full_name} has opened an Approved Email on {subject} on {date} \n2. HCP has a call planned in next 7 days"
                 secondary_reason = ""
             elif rule_row['Rule'] == "high_value_website_visits_in_the_last_15_days":
                 primary_reason = f"{full_name} visited brand website thrice in the past 15 days, spending most time on the Efficacy page"
                 secondary_reason = ""
+                summary_of_recommendation = "Indicates continued interest and curiosity about the product. Possible opportunity to immediately schedule a call or send an RTE based on pages visited"
             elif rule_row['Rule'] == "clicked_rep_triggered_email":
-                primary_reason = f"Please consider having a discussion to reinforce the messages in the next call \n1. {full_name} has opened an Approved Email on <Subject> on <date> \n2. HCP has a call planned in next 7 days"
+                primary_reason = f"Please consider having a discussion to reinforce the messages in the next call \n1. {full_name} has opened an Approved Email on {subject} on {date} \n2. HCP has a call planned in next 7 days"
                 secondary_reason = ""
+                summary_of_recommendation = "Indicates engagement with Brand promotional material. Consider following up with call"
 
             item = {
                 'npi_id': str(row['npi_id']),
@@ -411,6 +419,8 @@ class RequestHandler(BaseHTTPRequestHandler):
         self.delete_all_rows_from_table("npi_id", calls_table)
         self.delete_all_rows_from_table("npi_id", email_table)
         self.delete_all_rows_from_table("npi_id", web_table)
+
+        
         for index, rule_row in priority_df.iterrows():
             # suggestions_df_2 = suggestions_df[suggestions_df['Segment'].isin(rule_row['Segment'])].copy()
             if rule_row['Segment'] is None:

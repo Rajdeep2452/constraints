@@ -617,8 +617,6 @@ class RequestHandler(BaseHTTPRequestHandler):
 
                 dynamo_response = table.scan()
                 dynamo_data = dynamo_response.get('Items', [])
-
-                # Your logic to calculate values for Num_HCP, Num_Rep, Recomm_Cycle, and Recomm_Date
                 num_hcp = len(suggestions_data)
                 num_rep = max([hcp['rep_id'] for hcp in hcp_data])
                 recomm_cycle = 2

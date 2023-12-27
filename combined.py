@@ -1,6 +1,7 @@
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from config import *
 import json
+import random
 import boto3
 import datetime
 import pandas as pd
@@ -357,6 +358,8 @@ class RequestHandler(BaseHTTPRequestHandler):
         elif rule_row['Default_Channel'] == 'Web':
             table = web_table
             summary_of_recommendation = "Indicates engagement with Brand promotional material. Consider following up with rep-triggered email"
+        else:
+            print(f"Unexpected Default_Channel value:{rule_row['Rule']} {rule_row['Default_Channel']}")
 
 
         for _, row in filtered_npi.iterrows():
@@ -364,9 +367,10 @@ class RequestHandler(BaseHTTPRequestHandler):
             row_name = row['Account_Name']
             name_parts = row_name.split(', ')
             full_name = ' '.join(reversed(name_parts))
-            full_name = f"Dr. {full_name}"
+            full_name = f"{full_name}"
             subject = row['Preferred_Content']
             date = datetime.datetime.now() - datetime.timedelta(int(row['rte_last_actvty']))
+            random_value = random.randint(1, 14)
 
             if rule_row['Rule'] == "new_patients_expected_in_the_next_3_months":
                 primary_reason = f"{full_name} is expected to have {rule_row['Trigger_Value']} new patients in the next 3 months"
@@ -381,9 +385,11 @@ class RequestHandler(BaseHTTPRequestHandler):
                 primary_reason = f"{full_name} is expected to have {rule_row['Trigger_Value']} new patients in 2L LOT in the next 3 months"
                 secondary_reason = ""
             elif rule_row['Rule'] == "no_explicit_consent":
-                primary_reason = f"Please consider capturing HCP's consent in the next call \n1. {full_name} has not provided email consent or consent has expired \n2. HCP has a call planned in next <3> days \n3. {rule_row['Trigger_Value']}% HCPs in your territory have already provided consent"
+                primary_reason = f'''Please consider capturing HCP's consent in the next call
+                1. {full_name} has not provided email consent or consent has expired
+                2. HCP has a call planned in next {random_value} days
+                3. <(cieling(current count of hcp*100/total hcp)s> HCPs in your territory have already provided consent'''
                 secondary_reason = ""
-                summary_of_recommendation = "Consent is Expiring: Please consider sending any Approved Email which will automatically reset the consent for the HCP"
             elif rule_row['Rule'] == "clicked_3rd_party_email":
                 primary_reason =  f"Please consider having a discussion to reinforce the messages in the next call \n1. {full_name} has opened an Approved Email on {subject} on {date} \n2. HCP has a call planned in next 7 days"
                 secondary_reason = ""
@@ -394,13 +400,13 @@ class RequestHandler(BaseHTTPRequestHandler):
                 primary_reason = f"Please consider having a discussion to reinforce the messages in the next call \n1. {full_name} has opened an Approved Email on {subject} on {date} \n2. HCP has a call planned in next 7 days"
                 secondary_reason = ""
             elif rule_row['Rule'] == "high_value_website_visits_in_the_last_15_days":
-                primary_reason = f"{full_name} visited brand website thrice in the past 15 days, spending most time on the Efficacy page"
+                primary_reason = f"{full_name} visited brand website thrice in the past 15 days, spending most time on the {subject}"
                 secondary_reason = ""
-                summary_of_recommendation = "Indicates continued interest and curiosity about the product. Possible opportunity to immediately schedule a call or send an RTE based on pages visited"
             elif rule_row['Rule'] == "clicked_rep_triggered_email":
-                primary_reason = f"Please consider having a discussion to reinforce the messages in the next call \n1. {full_name} has opened an Approved Email on {subject} on {date} \n2. HCP has a call planned in next 7 days"
+                primary_reason = f'''Please consider having a discussion to reinforce the messages in the next call
+                1. {full_name} has opened an Approved Email on {subject} on {date}
+                2. HCP has a call planned in next {random_value} days'''
                 secondary_reason = ""
-                summary_of_recommendation = "Indicates engagement with Brand promotional material. Consider following up with call"
 
             item = {
                 'npi_id': str(row['npi_id']),

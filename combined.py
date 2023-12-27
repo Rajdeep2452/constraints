@@ -436,8 +436,8 @@ class RequestHandler(BaseHTTPRequestHandler):
             elif isinstance(rule_row['Segment'], str):
                 rule_row['Segment'] = [rule_row['Segment']]
 
-            print(rule_row['Rule'])
-            print(rule_row['Priority_Order'])
+            # print(rule_row['Rule'])
+            # print(rule_row['Priority_Order'])
 
             # Further filter rules based on segment present in suggestion_row list
             # print(suggestions_df['Segment'])

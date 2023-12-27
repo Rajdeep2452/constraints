@@ -335,7 +335,7 @@ class RequestHandler(BaseHTTPRequestHandler):
 
             # Delete each item
             for item in items:
-                npi_id = item['npi_id']  # Assuming 'npi_id' is your primary key
+                npi_id = item[key]  # Assuming 'npi_id' is your primary key
                 table.delete_item(Key={key: npi_id})
             
             print("All rows deleted successfully.")
@@ -421,12 +421,14 @@ class RequestHandler(BaseHTTPRequestHandler):
             }
             table.put_item(Item=item)
 
-    def show_details(self):
+    def show_details(self, priority_df):
         self.delete_all_rows_from_table("npi_id", calls_table)
         self.delete_all_rows_from_table("npi_id", email_table)
         self.delete_all_rows_from_table("npi_id", web_table)
 
-        
+        # Sort priority_df in ascending order based on 'Priority_Order'
+        priority_df = priority_df.sort_values(by='Priority_Order', ascending=True)
+
         for index, rule_row in priority_df.iterrows():
             # suggestions_df_2 = suggestions_df[suggestions_df['Segment'].isin(rule_row['Segment'])].copy()
             if rule_row['Segment'] is None:
@@ -434,49 +436,42 @@ class RequestHandler(BaseHTTPRequestHandler):
             elif isinstance(rule_row['Segment'], str):
                 rule_row['Segment'] = [rule_row['Segment']]
 
+            print(rule_row['Rule'])
+            print(rule_row['Priority_Order'])
+
             # Further filter rules based on segment present in suggestion_row list
             # print(suggestions_df['Segment'])
             suggestions_df_2 = suggestions_df[suggestions_df['Segment'].isin(rule_row['Segment'])].copy()
             if rule_row['Rule'] == "new_patients_expected_in_the_next_3_months" and rule_row['Status'] == True:
                 filtered_npi = suggestions_df_2[rule_row['Trigger_Value'] > suggestions_df_2['New_patients_in_next_quarter']].copy()
                 self.put_data_in_table(filtered_npi, rule_row)
-                continue
             elif rule_row['Rule'] == "decline_in_rx_share_in_the_last_one_month" and rule_row['Status'] == True:
                 filtered_npi = suggestions_df_2[rule_row['Trigger_Value'] > suggestions_df_2['Decline_in_Rx_share_in_the_last_one_month']].copy()
                 self.put_data_in_table(filtered_npi, rule_row)
-                continue
             elif rule_row['Rule'] == "switch_to_competitor_drug" and rule_row['Status'] == True:
                 filtered_npi = suggestions_df_2[rule_row['Trigger_Value'] == suggestions_df_2['Switch_to_Competitor']].copy()
                 self.put_data_in_table(filtered_npi, rule_row)
-                continue
             elif rule_row['Rule'] == "new_patient_starts_in_a_particular_lot" and rule_row['Status'] == True:
                 filtered_npi = suggestions_df_2[rule_row['Trigger_Value'] > suggestions_df_2['New_patients_in_particular_LOT']].copy()
                 self.put_data_in_table(filtered_npi, rule_row)
-                continue
             elif rule_row['Rule'] == "no_explicit_consent" and rule_row['Status'] == True:
                 filtered_npi = suggestions_df_2[rule_row['Trigger_Value'] == suggestions_df_2['No_Consent']].copy()
                 self.put_data_in_table(filtered_npi, rule_row)
-                continue
             elif rule_row['Rule'] == "clicked_3rd_party_email" and rule_row['Status'] == True:
                 filtered_npi = suggestions_df_2[rule_row['Trigger_Value'] == suggestions_df_2['Clicked_3rd_Party_Email']].copy()
                 self.put_data_in_table(filtered_npi, rule_row)
-                continue
             elif rule_row['Rule'] == "low_call_plan_attainment" and rule_row['Status'] == True:
                 filtered_npi = suggestions_df_2[rule_row['Trigger_Value'] == suggestions_df_2['New_patients_in_particular_LOT']].copy()
                 self.put_data_in_table(filtered_npi, rule_row)
-                continue
             elif rule_row['Rule'] == "clicked_home_office_email" and rule_row['Status'] == True:
                 filtered_npi = suggestions_df_2[rule_row['Trigger_Value'] > suggestions_df_2['Clicked_Home_Office_Email']].copy()
                 self.put_data_in_table(filtered_npi, rule_row)
-                continue
             elif rule_row['Rule'] == "high_value_website_visits_in_the_last_15_days" and rule_row['Status'] == True:
                 filtered_npi = suggestions_df_2[rule_row['Trigger_Value'] == suggestions_df_2['High Value Website Visits']].copy()
                 self.put_data_in_table(filtered_npi, rule_row)
-                continue
             elif rule_row['Rule'] == "clicked_rep_triggered_email" and rule_row['Status'] == True:
                 filtered_npi = suggestions_df_2[rule_row['Trigger_Value'] > suggestions_df_2['Clicked_Rep_Email']].copy()
                 self.put_data_in_table(filtered_npi, rule_row)
-                continue
 
     def compute_summary(self):
         num_hcp = len(suggestions_data)
@@ -579,7 +574,7 @@ class RequestHandler(BaseHTTPRequestHandler):
             self._send_response(200, items)
 
         elif self.path == '/Summary':
-            self.show_details()
+            self.show_details(priority_df)
             self.compute_summary()
             try:
                 # Retrieve data from the DynamoDB table

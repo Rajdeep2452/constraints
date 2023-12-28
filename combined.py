@@ -430,8 +430,7 @@ class RequestHandler(BaseHTTPRequestHandler):
         priority_df = pd.DataFrame(priority_data)
 
         # Sort priority_df in ascending order based on 'Priority_Order'
-        priority_df = priority_df.sort_values(by='Priority_Order', ascending=True)
-
+        priority_df = priority_df.sort_values(by='Priority_Order', ascending=False)
         for index, rule_row in priority_df.iterrows():
             # suggestions_df_2 = suggestions_df[suggestions_df['Segment'].isin(rule_row['Segment'])].copy()
             if rule_row['Segment'] is None:
@@ -440,7 +439,6 @@ class RequestHandler(BaseHTTPRequestHandler):
                 rule_row['Segment'] = [rule_row['Segment']]
 
             # print(rule_row['Rule'])
-            print(rule_row['Trigger_Value'])
 
             # Further filter rules based on segment present in suggestion_row list
             # print(suggestions_df['Segment'])
@@ -619,6 +617,9 @@ class RequestHandler(BaseHTTPRequestHandler):
                 # Get the value of the 'action' parameter
                 action_param = query_params.get('action', "empty")
 
+                largest_id_data_clc = self._get_last_added_data(table_clc)
+                call_limit = self._convert_decimal_to_int(largest_id_data_clc['Calls'])
+
 
                 # Filter rows based on the 'action' parameter
                 if 'calls' in action_param:
@@ -630,7 +631,10 @@ class RequestHandler(BaseHTTPRequestHandler):
                 else:
                     raise ValueError("Invalid action parameter")
 
-                dynamo_response = table.scan()
+                if table == calls_table:
+                    dynamo_response = table.scan(Limit=call_limit)
+                else:
+                    dynamo_response = table.scan()
                 dynamo_data = dynamo_response.get('Items', [])
                 num_hcp = len(suggestions_data)
                 num_rep = max([hcp['rep_id'] for hcp in hcp_data])

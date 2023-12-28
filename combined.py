@@ -349,18 +349,17 @@ class RequestHandler(BaseHTTPRequestHandler):
         secondary_reason = ""
         table = None
 
-        if rule_row['Default_Channel'] == 'Phone':
+        if rule_row['Default_Channel'].lower() in ['phone','call','calls']:
             table = calls_table
             summary_of_recommendation = "Consider reaching out to HCP to promote Brand for new patients expected"
-        elif rule_row['Default_Channel'] == 'Email':
+        elif rule_row['Default_Channel'].lower() in ['email','emails']:
             table = email_table
             summary_of_recommendation = "Indicates continued interest and curiosity about the product. Possible opportunity to immediately send an RTE based on pages visited"
-        elif rule_row['Default_Channel'] == 'Web':
+        elif rule_row['Default_Channel'].lower() in ['web','insight','insights'] :
             table = web_table
             summary_of_recommendation = "Indicates engagement with Brand promotional material. Consider following up with rep-triggered email"
         else:
             print(f"Unexpected Default_Channel value:{rule_row['Rule']} {rule_row['Default_Channel']}")
-
 
         for _, row in filtered_npi.iterrows():
 

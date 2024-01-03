@@ -132,20 +132,15 @@ class Helper:
         except Exception as e:
             print(f"Error deleting rows: {e}")
 
-    def npi_id_exists_in_table(table, npi_id):
-        response = dynamodb.get_item(
-            TableName=table,
-            Key={
-                'npi_id': {'S': npi_id}
-            }
-        )
-
-        return 'Item' in response
+        # except table.meta.client.exceptions.DynamoDBError as e:
+        #     print(f"Error checking NPI ID in DynamoDB: {e}")
+        #     return False
         
     def put_data_in_table(filtered_npi, rule_row):
         summary_of_recommendation = ""
         primary_reason = ""
         secondary_reason = ""
+        primary_reason_existing= ""
         table = None
 
         if rule_row['Default_Channel'].lower() in ['phone','call','calls']:
@@ -165,9 +160,14 @@ class Helper:
             npi_id = row['npi_id']
             # Check if the npi_id exists in the DynamoDB table
             table_data = table.scan()
-            if Helper.npi_id_exists_in_table(table_data, npi_id):
-                # Concatenate primary reason if the npi_id exists
-                primary_reason += f"{row['primary_reason']}\n"
+            items = table_data.get('Items', [])
+
+            for item in items:
+                if item.get('npi_id') == npi_id:
+                    # Concatenate primary reason if the npi_id exists
+                    primary_reason_existing = f"{item.get('Primary_Reason', '')}\n"
+                    print(primary_reason_existing)
+                    break
 
             row_name = row['Account_Name']
             name_parts = row_name.split(', ')
@@ -178,41 +178,42 @@ class Helper:
             random_value = random.randint(1, 14)
 
             if rule_row['Rule'] == "new_patients_expected_in_the_next_3_months":
-                primary_reason += f"{full_name} is expected to have {rule_row['Trigger_Value']} new patients in the next 3 months"
+                primary_reason = f"{full_name} is expected to have {rule_row['Trigger_Value']} new patients in the next 3 months"
                 secondary_reason = ""
             elif rule_row['Rule'] == "decline_in_rx_share_in_the_last_one_month":
-                primary_reason += f"Recent sales of the {full_name} is affiliated with, has decreased significantly by {rule_row['Trigger_Value']}% in the recent 1 month compared to previous 3 months*"
+                primary_reason = f"Recent sales of the {full_name} is affiliated with, has decreased significantly by {rule_row['Trigger_Value']}% in the recent 1 month compared to previous 3 months*"
                 secondary_reason = ""
             elif rule_row['Rule'] == "switch_to_competitor_drug":
-                primary_reason += f"{full_name}'s only eligible patient has moved away to an alternate therapy"
+                primary_reason = f"{full_name}'s only eligible patient has moved away to an alternate therapy"
                 secondary_reason = ""
             elif rule_row['Rule'] == "new_patient_starts_in_a_particular_lot":
-                primary_reason += f"{full_name} is expected to have {rule_row['Trigger_Value']} new patients in 2L LOT in the next 3 months"
+                primary_reason = f"{full_name} is expected to have {rule_row['Trigger_Value']} new patients in 2L LOT in the next 3 months"
                 secondary_reason = ""
             elif rule_row['Rule'] == "no_explicit_consent":
-                primary_reason += f'''Please consider capturing HCP's consent in the next call
+                primary_reason = f'''Please consider capturing HCP's consent in the next call
                 1. {full_name} has not provided email consent or consent has expired
                 2. HCP has a call planned in next {random_value} days
                 3. <(cieling(current count of hcp*100/total hcp)s> HCPs in your territory have already provided consent'''
                 secondary_reason = ""
             elif rule_row['Rule'] == "clicked_3rd_party_email":
-                primary_reason +=  f"Please consider having a discussion to reinforce the messages in the next call \n1. {full_name} has opened an Approved Email on {subject} on {date} \n2. HCP has a call planned in next 7 days"
+                primary_reason =  f"Please consider having a discussion to reinforce the messages in the next call \n1. {full_name} has opened an Approved Email on {subject} on {date} \n2. HCP has a call planned in next 7 days"
                 secondary_reason = ""
             elif rule_row['Rule'] == "low_call_plan_attainment":
-                primary_reason += ""
+                primary_reason = ""
                 secondary_reason = ""
             elif rule_row['Rule'] == "clicked_home_office_email":
-                primary_reason += f"Please consider having a discussion to reinforce the messages in the next call \n1. {full_name} has opened an Approved Email on {subject} on {date} \n2. HCP has a call planned in next 7 days"
+                primary_reason = f"Please consider having a discussion to reinforce the messages in the next call \n1. {full_name} has opened an Approved Email on {subject} on {date} \n2. HCP has a call planned in next 7 days"
                 secondary_reason = ""
             elif rule_row['Rule'] == "high_value_website_visits_in_the_last_15_days":
-                primary_reason += f"{full_name} visited brand website thrice in the past 15 days, spending most time on the {subject}"
+                primary_reason = f"{full_name} visited brand website thrice in the past 15 days, spending most time on the {subject}"
                 secondary_reason = ""
             elif rule_row['Rule'] == "clicked_rep_triggered_email":
-                primary_reason += f'''Please consider having a discussion to reinforce the messages in the next call
+                primary_reason = f'''Please consider having a discussion to reinforce the messages in the next call
                 1. {full_name} has opened an Approved Email on {subject} on {date}
                 2. HCP has a call planned in next {random_value} days'''
                 secondary_reason = ""
 
+            primary_reason = f"{primary_reason_existing}{primary_reason}"
             item = {
                 'npi_id': str(row['npi_id']),
                 'Region': row['region'],

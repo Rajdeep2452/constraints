@@ -7,17 +7,30 @@ from boto3.dynamodb.types import Decimal
 
 
 class Helper:
+
+    def __init__(self):
+        self.delete_all_rows_from_table('Id', table_hcp)
+        self.delete_all_rows_from_table('Id', table_clc)
+        try:
+            # Insert default values into the DynamoDB table
+            response1 = table_hcp.put_item(Item=self.default_values_hcp)
+            response2 = table_clc.put_item(Item=self.default_values_clc)
+
+        except Exception as e:
+            print(f"Error initializing table: {e}")
+
     # Default values for each column
     default_values_hcp = {
-        'Calls_Traditionalist': 1, 'Calls_Digital_savvy': 1, 'Calls_Hybrid': 1, 'Calls_Status': True,
-        'RTE_Traditionalist': 1, 'RTE_Digital_savvy': 1, 'RTE_Hybrid': 1, 'RTE_Status': True,
-        'HOE_Traditionalist': 1, 'HOE_Digital_savvy': 1, 'HOE_Hybrid': 1, 'HOE_Status': True,
-        '3P_Media_Traditionalist': 1, '3P_Media_Digital_savvy': 1, '3P_Media_Hybrid': 1, '3P_Status': True
+        'Calls_Traditionalist': Decimal('4.56'), 'Calls_Digital_savvy': Decimal('0.49'), 'Calls_Hybrid': Decimal('2.28'), 'Calls_Status': True,
+        'RTE_Traditionalist': Decimal('0.98'), 'RTE_Digital_savvy': Decimal('0.18'), 'RTE_Hybrid': Decimal('1.06'), 'RTE_Status': True,
+        'HOE_Traditionalist': Decimal('3.86'), 'HOE_Digital_savvy': Decimal('5.65'), 'HOE_Hybrid': Decimal('7.12'), 'HOE_Status': True,
+        '3P_Media_Traditionalist': Decimal('1.24'), '3P_Media_Digital_savvy': Decimal('5.01'), '3P_Media_Hybrid': Decimal('3.82'), '3P_Status': True,
+        'Id': 1
     }
 
 
     default_values_clc = {
-        'Calls': 1, 'RTE': 1, 'End_date': '2023-12-31', 'Start_date': '2023-01-01', '3P_Media': 1, 'Status': 'Active', 'HOE': 1
+        'Calls': 184, 'RTE': 103, 'End_date': '2023-12-31', 'Start_date': '2023-01-01', '3P_Media': 14482, 'Status': 'Active', 'HOE': 2400, 'Id':1
     }
 
     default_values_pt = {
@@ -116,7 +129,7 @@ class Helper:
 
         return csv_output.getvalue()
 
-    def delete_all_rows_from_table(key, table):
+    def delete_all_rows_from_table(self, key, table):
         try:
             # Scan the table to get all items
             response = table.scan()
@@ -176,10 +189,10 @@ class Helper:
             random_value = random.randint(1, 14)
 
             if rule_row['Rule'] == "new_patients_expected_in_the_next_3_months":
-                primary_reason = f"{full_name} is expected to have {rule_row['Trigger_Value']} new patients in the next 3 months"
+                primary_reason = f"{full_name} is expected to have {rule_row['Trigger_Value']} new patients in the next {str(random.randint(1, 3))} months"
                 secondary_reason = ""
             elif rule_row['Rule'] == "decline_in_rx_share_in_the_last_one_month":
-                primary_reason = f"Recent sales of the {full_name} is affiliated with, has decreased significantly by {rule_row['Trigger_Value']}% in the recent 1 month compared to previous 3 months"
+                primary_reason = f"Please consider discussing the possible reasons for recent drop in sales that the HCP is affiliated with during the next call.Recent sales affiliated with {full_name}'s account have experienced a notable {rule_row['Trigger_Value']}% decline over the past month when compared to the preceding {str(random.randint(1, 3))} months."
                 secondary_reason = ""
             elif rule_row['Rule'] == "switch_to_competitor_drug":
                 primary_reason = f"{full_name}'s only eligible patient has moved away to an alternate therapy"
@@ -188,13 +201,10 @@ class Helper:
                 primary_reason = f"{full_name} is expected to have {rule_row['Trigger_Value']} new patients in 2L LOT in the next 3 months"
                 secondary_reason = ""
             elif rule_row['Rule'] == "no_explicit_consent":
-                primary_reason = f'''Please consider capturing HCP's consent in the next call
-                1. {full_name} has not provided email consent or consent has expired
-                2. HCP has a call planned in next {random_value} days
-                3. <(cieling(current count of hcp*100/total hcp)s> HCPs in your territory have already provided consent'''
+                primary_reason = f'''Please consider capturing HCP's consent in the next call, {full_name} has not provided email consent or consent has expired'''
                 secondary_reason = ""
             elif rule_row['Rule'] == "clicked_3rd_party_email":
-                primary_reason =  f"Please consider having a discussion to reinforce the messages in the next call \n1. {full_name} has opened an Approved Email on {subject} on {date} \n2. HCP has a call planned in next 7 days"
+                primary_reason =  f"Please consider having a discussion to reinforce the messages in the next call \n1. {full_name} has opened an Approved Email on {subject} on {date}"
                 secondary_reason = ""
             elif rule_row['Rule'] == "low_call_plan_attainment":
                 primary_reason = ""
@@ -203,12 +213,10 @@ class Helper:
                 primary_reason = f"Please consider having a discussion to reinforce the messages in the next call \n1. {full_name} has opened an Approved Email on {subject} on {date} \n2. HCP has a call planned in next 7 days"
                 secondary_reason = ""
             elif rule_row['Rule'] == "high_value_website_visits_in_the_last_15_days":
-                primary_reason = f"{full_name} visited brand website thrice in the past 15 days, spending most time on the {subject}"
+                primary_reason = f"{full_name} visited brand website {str(random.randint(1, 3))} times in the past 15 days, spending most time on the {subject}"
                 secondary_reason = ""
             elif rule_row['Rule'] == "clicked_rep_triggered_email":
-                primary_reason = f'''Please consider having a discussion to reinforce the messages in the next call
-                1. {full_name} has opened an Approved Email on {subject} on {date}
-                2. HCP has a call planned in next {random_value} days'''
+                primary_reason = f'''Please consider having a discussion to reinforce the messages in the next call, {full_name} has opened an Approved Email on {subject} on {date}'''
                 secondary_reason = ""
 
             primary_reason = f'''{primary_reason_existing}
@@ -227,9 +235,9 @@ class Helper:
             table.put_item(Item=item)
 
     def show_details(self):
-        self.delete_all_rows_from_table("npi_id", calls_table)
-        self.delete_all_rows_from_table("npi_id", email_table)
-        self.delete_all_rows_from_table("npi_id", web_table)
+        self.delete_all_rows_from_table(Helper, "npi_id", calls_table)
+        self.delete_all_rows_from_table(Helper, "npi_id", email_table)
+        self.delete_all_rows_from_table(Helper, "npi_id", web_table)
 
         response_priority = priority_table.scan()
         priority_data = response_priority['Items']

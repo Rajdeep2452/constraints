@@ -367,7 +367,7 @@ class RequestHandler(BaseHTTPRequestHandler):
             existing_data = response.get('Items', [])
             
             if existing_data:
-                Helper.delete_all_rows_from_table("id", response)
+               Helper.delete_all_rows_from_table( Helper, "id", table_suppression)
 
             table_suppression.put_item(Item={**{'id': 1},**post_data})
 

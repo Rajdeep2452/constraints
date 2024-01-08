@@ -4,17 +4,22 @@ import csv
 import io
 from config import *
 from boto3.dynamodb.types import Decimal
+from collections import Counter
+from math import ceil
 
 
 class Helper:
 
+    num_rep = 0
+
     def __init__(self):
+        print(suggestions_table_name)
         self.delete_all_rows_from_table('Id', table_hcp)
         self.delete_all_rows_from_table('Id', table_clc)
         try:
             # Insert default values into the DynamoDB table
-            response1 = table_hcp.put_item(Item=self.default_values_hcp)
-            response2 = table_clc.put_item(Item=self.default_values_clc)
+            table_hcp.put_item(Item=self.default_values_hcp)
+            table_clc.put_item(Item=self.default_values_clc)
 
         except Exception as e:
             print(f"Error initializing table: {e}")
@@ -40,8 +45,7 @@ class Helper:
         'Trigger_Urgency': "Normal",
         'Only_For_Targets': False,
         'Default_Channel': "",
-        'Segment': "Traditionalist",
-        'Recomm_date': datetime.datetime.now().strftime('%dth %b (%a @ %I.%M %p)')
+        'Segment': "Traditionalist"
     }
 
     # Global variable to track existing priority orders
@@ -157,13 +161,9 @@ class Helper:
 
         if rule_row['Default_Channel'].lower() in ['phone','call','calls']:
             table = calls_table
-            summary_of_recommendation = "Consider reaching out to HCP to promote Brand for new patients expected"
-        elif rule_row['Default_Channel'].lower() in ['email','emails']:
-            table = email_table
-            summary_of_recommendation = "Indicates continued interest and curiosity about the product. Possible opportunity to immediately send an RTE based on pages visited"
+        elif rule_row['Default_Channel'].lower() in ['email','emails']:            table = email_table
         elif rule_row['Default_Channel'].lower() in ['web','insight','insights'] :
             table = web_table
-            summary_of_recommendation = "Indicates engagement with Brand promotional material. Consider following up with rep-triggered email"
         else:
             print(f"Unexpected Default_Channel value:{rule_row['Rule']} {rule_row['Default_Channel']}")
 
@@ -177,50 +177,60 @@ class Helper:
             for item in items:
                 if item.get('npi_id') == str(npi_id):
                     # Concatenate primary reason if the npi_id exists
-                    primary_reason_existing = f"{item.get('Primary_Reason')}\n"
+                    primary_reason_existing = f'''2) {item.get('Primary_Reason')}'''
                     break
 
             row_name = row['Account_Name']
             name_parts = row_name.split(', ')
             full_name = ' '.join(reversed(name_parts))
             full_name = f"{full_name}"
-            subject = row['Preferred_Content']
+            subject = f"on {row['Preferred_Content']}" if pd.notna(row['Preferred_Content']) else ""
             date = datetime.datetime.now() - datetime.timedelta(int(row['rte_last_actvty']))
             random_value = random.randint(1, 14)
 
             if rule_row['Rule'] == "new_patients_expected_in_the_next_3_months":
-                primary_reason = f"{full_name} is expected to have {rule_row['Trigger_Value']} new patients in the next {str(random.randint(1, 3))} months"
+                summary_of_recommendation = f"Consider reaching out to HCP to promote Brand for new patients expected"
+                primary_reason = f"{full_name} is expected to have {row['New_patients_in_next_quarter']} new patients in the next {str(random.randint(1, 3))} months"
                 secondary_reason = ""
             elif rule_row['Rule'] == "decline_in_rx_share_in_the_last_one_month":
-                primary_reason = f"Please consider discussing the possible reasons for recent drop in sales that the HCP is affiliated with during the next call.Recent sales affiliated with {full_name}'s account have experienced a notable {rule_row['Trigger_Value']}% decline over the past month when compared to the preceding {str(random.randint(1, 3))} months."
+                summary_of_recommendation = f"Prioritize HCP engagement and promote key product benefits to address potential market challenges"
+                tg_val_int=int(row['Decline_in_Rx_share_in_the_last_one_month'])
+                decline_num=random.randint(tg_val_int, 20)
+                primary_reason = f"Please consider discussing the possible reasons for recent drop in sales that the HCP is affiliated with during the next call.Recent sales affiliated with {full_name}'s account have experienced a notable {str(decline_num)}% decline over the past month when compared to the preceding {str(random.randint(1, 6))} months."
                 secondary_reason = ""
             elif rule_row['Rule'] == "switch_to_competitor_drug":
+                summary_of_recommendation = f"Consider reaching out to HCPs to get feedback from the HCPs regarding the switch"
                 primary_reason = f"{full_name}'s only eligible patient has moved away to an alternate therapy"
                 secondary_reason = ""
             elif rule_row['Rule'] == "new_patient_starts_in_a_particular_lot":
-                primary_reason = f"{full_name} is expected to have {rule_row['Trigger_Value']} new patients in 2L LOT in the next 3 months"
+                primary_reason = f"{full_name} is expected to have {row['New_patients_in_particular_LOT']} new patients in 2L LOT in the next 3 months"
                 secondary_reason = ""
             elif rule_row['Rule'] == "no_explicit_consent":
+                summary_of_recommendation = f"Consent is Expiring: Please consider sending any Approved Email which will automatically reset the consent for the HCP"
                 primary_reason = f'''Please consider capturing HCP's consent in the next call, {full_name} has not provided email consent or consent has expired'''
                 secondary_reason = ""
             elif rule_row['Rule'] == "clicked_3rd_party_email":
-                primary_reason =  f"Please consider having a discussion to reinforce the messages in the next call \n1. {full_name} has opened an Approved Email on {subject} on {date}"
+                summary_of_recommendation=f"Indicates engagement with Brand promotional material. Consider following up with 3rd party email"
+                primary_reason =  f"Please consider having a discussion to reinforce the messages in the next call ,{full_name} has opened an Approved Email {subject} on {date}"
                 secondary_reason = ""
             elif rule_row['Rule'] == "low_call_plan_attainment":
                 primary_reason = ""
                 secondary_reason = ""
             elif rule_row['Rule'] == "clicked_home_office_email":
-                primary_reason = f"Please consider having a discussion to reinforce the messages in the next call \n1. {full_name} has opened an Approved Email on {subject} on {date} \n2. HCP has a call planned in next 7 days"
+                summary_of_recommendation=f"Indicates engagement with Brand promotional material. Consider following up with hoe-triggered email"
+                primary_reason = f"Please consider having a discussion to reinforce the messages in the next call, {full_name} has opened an Approved Email {subject} on {date} "
                 secondary_reason = ""
             elif rule_row['Rule'] == "high_value_website_visits_in_the_last_15_days":
-                primary_reason = f"{full_name} visited brand website {str(random.randint(1, 3))} times in the past 15 days, spending most time on the {subject}"
+                summary_of_recommendation=f"Indicates continued interest and curiosity about the product. Possible opportunity to immediately schedule a call or send an RTE based on pages visited"
+                primary_reason = f"{full_name} visited brand website {str(random.randint(3, 10))} times in the past 15 days, spending most time {subject}"
                 secondary_reason = ""
             elif rule_row['Rule'] == "clicked_rep_triggered_email":
-                primary_reason = f'''Please consider having a discussion to reinforce the messages in the next call, {full_name} has opened an Approved Email on {subject} on {date}'''
+                summary_of_recommendation=f"Indicates engagement with Brand promotional material. Consider following up with rep-triggered email"
+                primary_reason = f'''Please consider having a discussion to reinforce the messages in the next call, {full_name} has opened an Approved Email {subject} on {date}'''
                 secondary_reason = ""
 
-            primary_reason = f'''{primary_reason_existing}
-            {primary_reason}'''
+            primary_reason = f'''{"1) " if primary_reason_existing != "" else ""}{primary_reason}
+                             {primary_reason_existing}'''
             item = {
                 'npi_id': str(row['npi_id']),
                 'Region': row['region'],
@@ -291,10 +301,11 @@ class Helper:
 
     def compute_summary(self):
         num_hcp = len(suggestions_data)
-        num_rep = max([hcp['rep_id'] for hcp in hcp_data])
+        helper.num_rep = max(item.get('rep_id', 0) for item in suggestions_data)
+         
         recomm_cycle = 2
         # Format Recomm_Date in the desired format
-        recomm_date = priority_df['Recomm_date'].max()
+        recomm_date = datetime.datetime.now().strftime('%dth %b (%a @ %I.%M %p)')
 
         # Get the number of rows in calls_table
         num_calls = calls_table.scan(Select='COUNT')['Count']
@@ -304,13 +315,33 @@ class Helper:
 
         # Get the number of columns in web_table
         num_web = web_table.scan(Select='COUNT')['Count']
+        num_rep = helper.num_rep
 
 
         # Check if data for the given id exists
         existing_data = table_summary.get_item(Key={'id': 1}).get('Item')
+        largest_id_data_clc = self._get_last_added_data(self, table_clc)
+        call_limit = self._convert_decimal_to_int(self, largest_id_data_clc['Calls'])
+        avg_calls = min(Decimal(num_calls / (num_rep)),Decimal(call_limit/12))
+        dynamo_response = calls_table.scan()
+        rep_limit = ceil(Decimal(avg_calls))
+        num_calls = 0
+
+        # Apply rep limit for calls
+        dynamo_data = dynamo_response.get('Items', [])
+        rep_count = dict(Counter(item['REP'] for item in dynamo_data))
+
+        # Create a new list with filtered items
+
+        # filtered_dynamo_data = [item for item in dynamo_data if rep_count[item['REP']] <= rep_limit]
+        # print(filtered_dynamo_data)
+
+        # Count the number of rows in the filtered data
+        num_calls = sum(rep_limit if count > rep_limit else count for count in rep_count.values())
 
         if existing_data:
             # Update existing data
+
             response = table_summary.update_item(
                 Key={'id': 1},
                 UpdateExpression='SET Num_HCP = :nh, Num_Rep = :nr, Recomm_Cycle = :rc, Recomm_Date = :rd, '
@@ -324,11 +355,11 @@ class Helper:
                     ':cr': num_calls,
                     ':rte': num_email,
                     ':ins': num_web,
-                    ':ac': str(num_calls / num_rep),
-                    ':art': str(num_email / num_rep),
-                    ':ai': str(num_web / num_rep)
+                    ':ac': str(round(avg_calls, 2)),
+                    ':art': str(round((num_email / num_rep), 2)),
+                    ':ai': str(round((num_web / num_rep), 2))
                 },
-                ReturnValues='ALL_NEW'
+                ReturnValues='ALL_NEW' 
             )
         else:
             # Insert new data
@@ -342,9 +373,11 @@ class Helper:
                     'Calls_Recomm': num_calls,
                     'RTE_Recomm': num_email,
                     'Insights': num_web,
-                    'Avg_Calls': str(num_calls / num_rep),
-                    'Avg_RTE': str(num_email / num_rep),
-                    'Avg_Insights': str(num_web / num_rep)
+                    'Avg_Calls': str(round(avg_calls, 2)),
+                    'Avg_RTE': str(round((num_email / num_rep), 2)),
+                    'Avg_Insights': str(round((num_web / num_rep), 2))
                 }
             )
         print("Data computation complete")
+
+helper = Helper()

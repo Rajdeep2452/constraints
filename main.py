@@ -1,17 +1,14 @@
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from config import *
 from validations import Validation
-from helper import Helper
+from helper import *
 from collections import Counter
 import json
 import datetime
 import urllib.parse
 from boto3.dynamodb.types import Decimal
+from math import ceil
 
-
-# Initialize DynamoDB client
-dynamodb = boto3.resource('dynamodb', region_name=aws_region, aws_access_key_id=aws_access_key_id, aws_secret_access_key=aws_secret_access_key)
-helper = Helper()
 validation = Validation()
 
 class DecimalEncoder(json.JSONEncoder):
@@ -82,9 +79,11 @@ class RequestHandler(BaseHTTPRequestHandler):
             items = response.get('Items', [])
             self._send_response(200, items)
 
-        elif self.path == '/Summary':
+        elif self.path == '/GenerateSummary':
             Helper.show_details(Helper)
             Helper.compute_summary(Helper)
+
+        elif self.path == '/Summary':
             try:
                 # Retrieve data from the DynamoDB table
                 response = table_summary.get_item(Key={'id': 1})
@@ -123,15 +122,13 @@ class RequestHandler(BaseHTTPRequestHandler):
 
                 # Get the value of the 'action' parameter
                 action_param = query_params.get('action', "empty")
-
-                largest_id_data_clc = helper._get_last_added_data(table_clc)
-                call_limit = helper._convert_decimal_to_int(largest_id_data_clc['Calls'])
-                rep_limit = helper._convert_decimal_to_int(largest_id_data_clc['RTE'])
+                summary_data = table_summary.get_item(Key={'id': 1}).get('Item')
 
                 # Filter rows based on the 'action' parameter
                 if 'calls' in action_param:
                     table = calls_table
-                    dynamo_response = table.scan(Limit=call_limit)
+                    dynamo_response = table.scan()
+                    rep_limit = ceil(Decimal(summary_data['Avg_Calls']))
                     
                     # Apply rep limit for calls
                     dynamo_data = dynamo_response.get('Items', [])
@@ -153,11 +150,12 @@ class RequestHandler(BaseHTTPRequestHandler):
                     dynamo_data = dynamo_response.get('Items', [])
                 else:
                     raise ValueError("Invalid action parameter")
+                
 
                 num_hcp = len(suggestions_data)
-                num_rep = max([hcp['rep_id'] for hcp in hcp_data])
+                num_rep = helper.num_rep
                 recomm_cycle = 2
-                recomm_date = datetime.datetime.now().strftime('%dth %b (%a @ %I.%M %p)')
+                recomm_date = summary_data['Recomm_Date']
 
                 # Create the response structure
                 response_data = {

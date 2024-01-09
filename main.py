@@ -80,8 +80,40 @@ class RequestHandler(BaseHTTPRequestHandler):
             self._send_response(200, items)
 
         elif self.path == '/GenerateSummary':
+            try:
+                Helper.show_details(Helper)
+                Helper.compute_summary(Helper)
+                # Retrieve data from the DynamoDB table
+                response = table_summary.get_item(Key={'id': 1})
+
+                # Check if data exists
+                if 'Item' in response:
+                    data = response['Item']
+
+                    # Send a response back to the client
+                    self.send_response(200)
+                    self.send_header('Content-type', 'application/json')
+                    self._set_cors_headers()
+                    self.end_headers()
+                    self.wfile.write(json.dumps(data, cls=DecimalEncoder).encode())
+                else:
+                    # Send a response back to the client if data doesn't exist
+                    self.send_response(404)
+                    self.send_header('Content-type', 'application/json')
+                    self._set_cors_headers()
+                    self.end_headers()
+                    self.wfile.write(json.dumps({'error': 'Data not found'}).encode('utf-8'))
+
+            except Exception as e:
+                # Send an error response back to the client
+                self.send_response(500)
+                self.send_header('Content-type', 'application/json')
+                self._set_cors_headers()
+                self.end_headers()
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             Helper.show_details(Helper)
             Helper.compute_summary(Helper)
+            
 
         elif self.path == '/Summary':
             try:

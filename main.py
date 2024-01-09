@@ -111,9 +111,6 @@ class RequestHandler(BaseHTTPRequestHandler):
                 self._set_cors_headers()
                 self.end_headers()
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
-            Helper.show_details(Helper)
-            Helper.compute_summary(Helper)
-            
 
         elif self.path == '/Summary':
             try:
